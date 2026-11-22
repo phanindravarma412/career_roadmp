@@ -13,7 +13,7 @@ class RichLine extends StatelessWidget {
   final TextStyle? style;
   final int? maxLines;
 
-  static final _re = RegExp(r'(`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~)');
+  static final _re = RegExp(r'(`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\[[^\]]+\]\([^)]+\))');
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +34,13 @@ class RichLine extends StatelessWidget {
               backgroundColor: scheme.surfaceContainerHighest,
               color: scheme.onSurface,
             ),
+          ),
+        );
+      } else if (token.startsWith('[')) {
+        spans.add(
+          TextSpan(
+            text: token.substring(1, token.indexOf(']')),
+            style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
           ),
         );
       } else if (token.startsWith('**')) {

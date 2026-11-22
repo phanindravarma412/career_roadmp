@@ -2,31 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'models/plan.dart';
-import 'models/progress_log.dart';
 import 'screens/guides_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/plan_screen.dart';
 import 'screens/progress_screen.dart';
+import 'screens/reviews_screen.dart';
 import 'screens/today_screen.dart';
 import 'services/reminders.dart';
+import 'services/repo_sync.dart';
 import 'state/app_state.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final planText = await rootBundle.loadString('assets/plan/daily-plan.md');
-  final logText = await rootBundle.loadString('assets/plan/progress-log.md');
   final prefs = await SharedPreferences.getInstance();
   final reminders = Reminders();
   await reminders.init();
 
-  final state = AppState(
-    plan: Plan.parse(planText),
-    log: ProgressLog.parse(logText),
+  // Last copy synced from GitHub, or the copy bundled in the app.
+  final snapshot = ContentStore.loadCached(prefs) ?? await ContentStore.loadBundled(rootBundle);
+
+  final state = AppState.fromSnapshot(
+    snapshot,
     prefs: prefs,
     reminders: reminders,
+    sync: GitHubSync(),
   );
   runApp(RoadmapApp(state: state));
+  // Pull the latest plan and check-ins in the background.
+  state.syncNow();
 }
 
 class RoadmapApp extends StatelessWidget {
@@ -109,13 +112,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // A new calendar day may have started while the app was in the background.
     if (s == AppLifecycleState.resumed) {
       setState(() {});
-      AppScope.of(context).refreshReminders();
+      final state = AppScope.of(context);
+      state.refreshReminders();
+      state.syncNow(ifOlderThan: const Duration(minutes: 1));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    const screens = [TodayScreen(), PlanScreen(), ProgressScreen(), GuidesScreen()];
+    const screens = [TodayScreen(), PlanScreen(), ReviewsScreen(), ProgressScreen(), GuidesScreen()];
     return Scaffold(
       body: IndexedStack(index: _tab, children: screens),
       bottomNavigationBar: NavigationBar(
@@ -124,6 +129,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.today_outlined), selectedIcon: Icon(Icons.today_rounded), label: 'Today'),
           NavigationDestination(icon: Icon(Icons.view_list_outlined), selectedIcon: Icon(Icons.view_list_rounded), label: 'Plan'),
+          NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check_rounded), label: 'Reviews'),
           NavigationDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights_rounded), label: 'Progress'),
           NavigationDestination(icon: Icon(Icons.menu_book_outlined), selectedIcon: Icon(Icons.menu_book_rounded), label: 'Guides'),
         ],

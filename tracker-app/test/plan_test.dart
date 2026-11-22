@@ -8,8 +8,8 @@ import 'package:roadmap_tracker/state/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  final plan = Plan.parse(File('assets/plan/daily-plan.md').readAsStringSync());
-  final log = ProgressLog.parse(File('assets/plan/progress-log.md').readAsStringSync());
+  final plan = Plan.parse(File('assets/repo/plan/daily-plan.md').readAsStringSync());
+  final log = ProgressLog.parse(File('assets/repo/plan/progress-log.md').readAsStringSync());
 
   group('plan parser', () {
     test('finds every day from 0 to 98 plus the redo and Day 99', () {

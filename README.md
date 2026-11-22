@@ -31,7 +31,7 @@ Phani's 14-week prep to move from a service-company lead role to a **Senior Full
 | `check-ins/` | Daily test results from Claude: `day-NN.md` with every question, your answer, score (1-5), feedback and the move-on decision. `_template.md` shows the format | Every day |
 | `notes/` | `revision-notes.md` (correct answers from check-in feedback, by topic), `mistakes-log.md`, `stories.md` (STAR stories), daily notes, cheatsheets | Every day |
 | `resume/` | Resume versions (full-stack, Flutter), LinkedIn text, target company list | Weeks 10-12 |
-| `tracker-app/` | **Roadmap Tracker**, a Flutter Android app showing the plan, today's tasks, streak, % done, check-in scores and reminders. Not practice code; see its `README.md` to install. After plan changes, run `tracker-app/tool/sync_plan.sh` and re-install | Every day (on the phone) |
+| `tracker-app/` | **Roadmap Tracker**, a Flutter Android app showing the plan, today's tasks, check-in reports, revision notes, streak, % done and reminders. It syncs from this GitHub repo by itself, so **push after each check-in** and the phone updates. Not practice code; see its `README.md` to install | Every day (on the phone) |
 
 ## Naming
 

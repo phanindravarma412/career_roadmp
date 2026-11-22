@@ -4,9 +4,11 @@ import 'package:flutter/material.dart' hide Badge;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../logic/gamification.dart';
+import '../models/docs.dart';
 import '../models/plan.dart';
 import '../models/progress_log.dart';
 import '../services/reminders.dart';
+import '../services/repo_sync.dart';
 
 /// Result of toggling a task, so the UI can celebrate.
 class ToggleOutcome {
@@ -15,24 +17,65 @@ class ToggleOutcome {
   final Level? levelUp;
 }
 
+/// Outcome of a GitHub sync, for a snackbar.
+enum SyncOutcome { updated, unchanged, failed, skipped }
+
 class AppState extends ChangeNotifier {
   AppState({
     required this.plan,
     required this.log,
     required SharedPreferences prefs,
+    RepoSnapshot? snapshot,
     Reminders? reminders,
+    GitHubSync? sync,
     DateTime Function()? clock,
   }) : _prefs = prefs,
        _reminders = reminders,
-       _clock = clock ?? DateTime.now {
+       _sync = sync,
+       _clock = clock ?? DateTime.now,
+       snapshot = snapshot ?? RepoSnapshot(files: {}) {
     _load();
+    checkIns = CheckInDoc.fromFiles(this.snapshot.files);
   }
 
-  final Plan plan;
-  final ProgressLog log;
+  /// Builds the state from a snapshot of repo files.
+  factory AppState.fromSnapshot(
+    RepoSnapshot snap, {
+    required SharedPreferences prefs,
+    Reminders? reminders,
+    GitHubSync? sync,
+    DateTime Function()? clock,
+  }) => AppState(
+    plan: Plan.parse(snap.plan),
+    log: ProgressLog.parse(snap.log),
+    snapshot: snap,
+    prefs: prefs,
+    reminders: reminders,
+    sync: sync,
+    clock: clock,
+  );
+
+  Plan plan;
+  ProgressLog log;
+  RepoSnapshot snapshot;
+  late List<CheckInDoc> checkIns;
   final SharedPreferences _prefs;
   final Reminders? _reminders;
+  final GitHubSync? _sync;
   final DateTime Function() _clock;
+
+  static const defaultRepo = 'phanindravarma412/career_roadmp';
+  static const defaultBranch = 'main';
+  static const _kRepo = 'repo';
+  static const _kBranch = 'branch';
+
+  late String repo;
+  late String branch;
+  bool syncing = false;
+  String? syncError;
+  DateTime? _lastAttempt;
+
+  String? get revisionNotes => snapshot.files[RepoSnapshot.revisionPath];
 
   static const _kDone = 'done';
   static const _kStart = 'startDate';
@@ -67,6 +110,59 @@ class AppState extends ChangeNotifier {
     goal = _prefs.getString(_kGoal) ?? defaultGoal;
     reminderOn = _prefs.getBool(_kReminderOn) ?? true;
     reminderMinutes = _prefs.getInt(_kReminderMinutes) ?? 20 * 60;
+    repo = _prefs.getString(_kRepo) ?? defaultRepo;
+    branch = _prefs.getString(_kBranch) ?? defaultBranch;
+  }
+
+  // ---------------------------------------------------------------- sync
+
+  /// Pulls the latest plan, scores and check-ins from GitHub.
+  /// With [ifOlderThan], skips when the last attempt was more recent.
+  Future<SyncOutcome> syncNow({Duration? ifOlderThan}) async {
+    final sync = _sync;
+    if (sync == null || syncing) return SyncOutcome.skipped;
+    final last = _lastAttempt;
+    if (ifOlderThan != null && last != null && _clock().difference(last) < ifOlderThan) {
+      return SyncOutcome.skipped;
+    }
+    _lastAttempt = _clock();
+    syncing = true;
+    notifyListeners();
+    try {
+      final next = await sync.fetch(repo: repo, branch: branch, current: snapshot);
+      final changed = next.commit != snapshot.commit;
+      applySnapshot(next);
+      await ContentStore.saveCache(_prefs, next);
+      syncError = null;
+      return changed ? SyncOutcome.updated : SyncOutcome.unchanged;
+    } catch (e) {
+      syncError = e is SyncException ? e.message : 'Sync failed';
+      return SyncOutcome.failed;
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
+  }
+
+  void applySnapshot(RepoSnapshot snap) {
+    if (snap.commit != snapshot.commit || snapshot.files.isEmpty) {
+      plan = Plan.parse(snap.plan);
+      log = ProgressLog.parse(snap.log);
+      checkIns = CheckInDoc.fromFiles(snap.files);
+    }
+    snapshot = snap;
+    notifyListeners();
+    _refreshReminders();
+  }
+
+  Future<void> setRepo(String newRepo, String newBranch) async {
+    repo = newRepo.trim().isEmpty ? defaultRepo : newRepo.trim();
+    branch = newBranch.trim().isEmpty ? defaultBranch : newBranch.trim();
+    await _prefs.setString(_kRepo, repo);
+    await _prefs.setString(_kBranch, branch);
+    // Force a full download from the new source.
+    snapshot = RepoSnapshot(files: snapshot.files);
+    notifyListeners();
   }
 
   Future<void> _save() async {
@@ -88,7 +184,8 @@ class AppState extends ChangeNotifier {
       d.tasks.isEmpty ? 0 : doneCount(d) / d.tasks.length;
 
   Future<ToggleOutcome> toggle(PlanTask task) async {
-    final day = plan.days.firstWhere((d) => d.tasks.contains(task));
+    // Match by id: after a sync the plan objects are new.
+    final day = plan.days.firstWhere((d) => d.tasks.any((t) => t.id == task.id));
     final wasDayDone = isDayDone(day);
     final levelBefore = levelInfo.level;
     if (isDone(task)) {

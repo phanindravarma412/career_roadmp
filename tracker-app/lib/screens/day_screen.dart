@@ -12,6 +12,8 @@ class DayScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
+    // Use the latest version of this day if a sync replaced the plan.
+    final day = state.plan.dayById[this.day.id] ?? this.day;
     final scheme = Theme.of(context).colorScheme;
     final week = state.plan.weekOf(day);
     final done = state.doneCount(day);

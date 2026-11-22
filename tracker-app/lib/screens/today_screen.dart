@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../logic/gamification.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
+import '../widgets/sync_status.dart';
 import '../widgets/task_tile.dart';
 import 'day_screen.dart';
+import 'reviews_screen.dart';
 import 'settings_screen.dart';
 
 class TodayScreen extends StatelessWidget {
@@ -26,9 +28,11 @@ class TodayScreen extends StatelessWidget {
     final done = state.doneCount(day);
     final total = day.tasks.length;
     final open = state.log.openRevision;
-    final quote = motivationLines[state.today.difference(DateTime(2026)).inDays %
-            motivationLines.length]
-        .replaceAll('{day}', '${day.number}');
+    final latest = state.checkIns.isEmpty ? null : state.checkIns.first;
+    final quote =
+        motivationLines[state.today.difference(DateTime(2026)).inDays %
+                motivationLines.length]
+            .replaceAll('{day}', '${day.number}');
 
     return Scaffold(
       appBar: AppBar(
@@ -46,6 +50,7 @@ class TodayScreen extends StatelessWidget {
           ],
         ),
         actions: [
+          const SyncButton(),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.settings_outlined),
@@ -56,156 +61,247 @@ class TodayScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          _HeroCard(dayTitle: day.title, weekLabel: '${week.label} · ${week.title}', done: done, total: total, hours: day.hours, weekday: day.weekdayLabel),
-          _ScheduleBanner(),
-          SectionCard(
-            title: day.isRedo ? '${day.title} - fix and re-test' : 'Today\'s tasks',
-            trailing: Text(
-              '$done / $total',
-              style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary),
+      body: RefreshIndicator(
+        onRefresh: () => syncWithFeedback(context),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _HeroCard(
+              dayTitle: day.title,
+              weekLabel: '${week.label} · ${week.title}',
+              done: done,
+              total: total,
+              hours: day.hours,
+              weekday: day.weekdayLabel,
             ),
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (day.subtitle != null && day.weekdayLabel == null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 6),
-                    child: Text(
-                      day.subtitle!,
-                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-                    ),
-                  ),
-                for (final t in day.tasks) TaskTile(task: t),
-              ],
-            ),
-          ),
-          if (open.isNotEmpty)
+            _ScheduleBanner(),
             SectionCard(
-              title: 'Revise (from your check-ins)',
-              trailing: Icon(Icons.replay_rounded, color: scheme.tertiary),
-              child: Column(
-                children: [
-                  for (final r in open)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            margin: const EdgeInsets.only(top: 2, right: 10),
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: scheme.tertiaryContainer,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              r.score.split(' ').first,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: scheme.onTertiaryContainer,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                RichLine(r.topic, style: const TextStyle(fontSize: 14)),
-                                if (r.reviseBy.isNotEmpty && r.reviseBy != '-')
-                                  Text(
-                                    'Revise by ${r.reviseBy}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Answers are in notes/revision-notes.md.',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-          if (next != null)
-            SectionCard(
-              title: 'Up next: ${next.title}',
-              trailing: TextButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => DayScreen(day: next)),
+              title: day.isRedo
+                  ? '${day.title} - fix and re-test'
+                  : 'Today\'s tasks',
+              trailing: Text(
+                '$done / $total',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: scheme.primary,
                 ),
-                child: const Text('Preview'),
               ),
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (final t in next.tasks.take(3))
+                  if (day.subtitle != null && day.weekdayLabel == null)
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${t.number}.  ', style: TextStyle(color: scheme.onSurfaceVariant)),
-                          Expanded(child: RichLine(t.text, maxLines: 2)),
-                        ],
+                      padding: const EdgeInsets.only(left: 4, bottom: 6),
+                      child: Text(
+                        day.subtitle!,
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
-                  if (next.tasks.length > 3)
-                    Text(
-                      '+ ${next.tasks.length - 3} more',
-                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12.5),
-                    ),
+                  for (final t in day.tasks) TaskTile(task: t),
                 ],
               ),
             ),
-          SectionCard(
-            child: Row(
-              children: [
-                Icon(Icons.format_quote_rounded, color: scheme.primary, size: 30),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    quote,
-                    style: const TextStyle(fontSize: 14.5, fontStyle: FontStyle.italic, height: 1.35),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SectionCard(
-            child: Row(
-              children: [
-                Icon(Icons.flag_circle_rounded, color: scheme.secondary, size: 30),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Why I\'m doing this',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            if (latest != null)
+              Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: (latest.passed ?? true)
+                        ? const Color(0xFF16A34A).withValues(alpha: 0.15)
+                        : scheme.errorContainer,
+                    child: Text(
+                      latest.average?.toStringAsFixed(1) ?? '-',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                        color: (latest.passed ?? true)
+                            ? const Color(0xFF15803D)
+                            : scheme.onErrorContainer,
                       ),
-                      const SizedBox(height: 2),
-                      Text(state.goal, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ],
+                    ),
+                  ),
+                  title: Text(
+                    'Latest review: ${latest.title}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: latest.decision == null
+                      ? null
+                      : RichLine(latest.decision!, maxLines: 2),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DocScreen(
+                        title: '${latest.title} check-in',
+                        markdown: latest.body,
+                      ),
+                    ),
                   ),
                 ),
-              ],
+              ),
+            if (open.isNotEmpty)
+              SectionCard(
+                title: 'Revise (from your check-ins)',
+                trailing: Icon(Icons.replay_rounded, color: scheme.tertiary),
+                child: Column(
+                  children: [
+                    for (final r in open)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(top: 2, right: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: scheme.tertiaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                r.score.split(' ').first,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.onTertiaryContainer,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  RichLine(
+                                    r.topic,
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  if (r.reviseBy.isNotEmpty &&
+                                      r.reviseBy != '-')
+                                    Text(
+                                      'Revise by ${r.reviseBy}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Answers are in notes/revision-notes.md.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (next != null)
+              SectionCard(
+                title: 'Up next: ${next.title}',
+                trailing: TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => DayScreen(day: next)),
+                  ),
+                  child: const Text('Preview'),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final t in next.tasks.take(3))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${t.number}.  ',
+                              style: TextStyle(color: scheme.onSurfaceVariant),
+                            ),
+                            Expanded(child: RichLine(t.text, maxLines: 2)),
+                          ],
+                        ),
+                      ),
+                    if (next.tasks.length > 3)
+                      Text(
+                        '+ ${next.tasks.length - 3} more',
+                        style: TextStyle(
+                          color: scheme.onSurfaceVariant,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            SectionCard(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.format_quote_rounded,
+                    color: scheme.primary,
+                    size: 30,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      quote,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontStyle: FontStyle.italic,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            SectionCard(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.flag_circle_rounded,
+                    color: scheme.secondary,
+                    size: 30,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Why I\'m doing this',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          state.goal,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -243,7 +339,10 @@ class _HeroCard extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [scheme.primary, Color.lerp(scheme.primary, scheme.tertiary, 0.7)!],
+          colors: [
+            scheme.primary,
+            Color.lerp(scheme.primary, scheme.tertiary, 0.7)!,
+          ],
         ),
       ),
       child: Column(
@@ -269,7 +368,10 @@ class _HeroCard extends StatelessWidget {
                       weekLabel,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: onHero.withValues(alpha: 0.85), fontSize: 13),
+                      style: TextStyle(
+                        color: onHero.withValues(alpha: 0.85),
+                        fontSize: 13,
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -277,7 +379,11 @@ class _HeroCard extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         if (hours != null)
-                          _HeroPill(icon: Icons.schedule_rounded, label: '$hours h${weekday != null ? ' · $weekday' : ''}'),
+                          _HeroPill(
+                            icon: Icons.schedule_rounded,
+                            label:
+                                '$hours h${weekday != null ? ' · $weekday' : ''}',
+                          ),
                         _HeroPill(
                           icon: Icons.local_fire_department_rounded,
                           label: '${state.streak}-day streak',
@@ -297,9 +403,19 @@ class _HeroCard extends StatelessWidget {
                   children: [
                     Text(
                       '$done/$total',
-                      style: TextStyle(color: onHero, fontWeight: FontWeight.w800, fontSize: 20),
+                      style: TextStyle(
+                        color: onHero,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                      ),
                     ),
-                    Text('today', style: TextStyle(color: onHero.withValues(alpha: 0.8), fontSize: 11)),
+                    Text(
+                      'today',
+                      style: TextStyle(
+                        color: onHero.withValues(alpha: 0.8),
+                        fontSize: 11,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -317,8 +433,13 @@ class _HeroCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                level.next == null ? '${level.xp} XP' : '${level.xp} / ${level.nextLevelXp} XP',
-                style: TextStyle(color: onHero.withValues(alpha: 0.85), fontSize: 12),
+                level.next == null
+                    ? '${level.xp} XP'
+                    : '${level.xp} / ${level.nextLevelXp} XP',
+                style: TextStyle(
+                  color: onHero.withValues(alpha: 0.85),
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -336,7 +457,10 @@ class _HeroCard extends StatelessWidget {
           Text(
             '${(state.overallFraction * 100).toStringAsFixed(1)}% of the plan done · '
             '${state.doneDays} of ${state.totalDays} days',
-            style: TextStyle(color: onHero.withValues(alpha: 0.85), fontSize: 12),
+            style: TextStyle(
+              color: onHero.withValues(alpha: 0.85),
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -363,7 +487,14 @@ class _HeroPill extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: on),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(color: on, fontSize: 12, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: TextStyle(
+              color: on,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
@@ -379,12 +510,20 @@ class _ScheduleBanner extends StatelessWidget {
     final behind = state.daysBehind;
     final projected = state.projectedApplicationsDate;
 
-    final (IconData icon, Color bg, Color fg, String title, String body) = behind <= 0
+    final (
+      IconData icon,
+      Color bg,
+      Color fg,
+      String title,
+      String body,
+    ) = behind <= 0
         ? (
             Icons.verified_rounded,
             const Color(0xFF16A34A).withValues(alpha: 0.12),
             const Color(0xFF15803D),
-            behind < 0 ? '${-behind} day${behind == -1 ? '' : 's'} ahead of schedule' : 'On schedule',
+            behind < 0
+                ? '${-behind} day${behind == -1 ? '' : 's'} ahead of schedule'
+                : 'On schedule',
             'Applications start ${shortDate(state.plannedApplicationsDate)}.',
           )
         : (
@@ -411,7 +550,10 @@ class _ScheduleBanner extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: fg)),
+                  Text(
+                    title,
+                    style: TextStyle(fontWeight: FontWeight.w700, color: fg),
+                  ),
                   Text(body, style: TextStyle(fontSize: 12.5, color: fg)),
                 ],
               ),
@@ -438,8 +580,14 @@ class _ScheduleBanner extends StatelessWidget {
           '${shortDate(state.today.add(Duration(days: 99 - state.currentDay.number)))}.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Re-plan')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Re-plan'),
+          ),
         ],
       ),
     );

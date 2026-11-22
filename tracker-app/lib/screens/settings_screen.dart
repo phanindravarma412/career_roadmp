@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../services/reminders.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
+import '../widgets/sync_status.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -62,6 +63,49 @@ class SettingsScreen extends StatelessWidget {
               );
               if (picked != null) {
                 await state.setReminder(on: true, minutes: picked.hour * 60 + picked.minute);
+              }
+            },
+          ),
+          _Header('GitHub sync'),
+          const SyncStatusLine(),
+          ListTile(
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('Sync now'),
+            subtitle: const Text('Also happens when you open the app or pull down on Today / Reviews'),
+            trailing: state.syncing
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4))
+                : null,
+            onTap: () => syncWithFeedback(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.source_outlined),
+            title: const Text('Repository'),
+            subtitle: Text('${state.repo} · ${state.branch}'),
+            onTap: () async {
+              final repoCtrl = TextEditingController(text: state.repo);
+              final branchCtrl = TextEditingController(text: state.branch);
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('GitHub repository'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(controller: repoCtrl, decoration: const InputDecoration(labelText: 'owner/name')),
+                      TextField(controller: branchCtrl, decoration: const InputDecoration(labelText: 'Branch')),
+                      const SizedBox(height: 8),
+                      const Text('Must be a public repo.', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                    FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+                  ],
+                ),
+              );
+              if (ok == true && context.mounted) {
+                await state.setRepo(repoCtrl.text, branchCtrl.text);
+                if (context.mounted) await syncWithFeedback(context);
               }
             },
           ),
@@ -168,8 +212,8 @@ class SettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.info_outline_rounded),
             title: Text('${state.plan.countedDays.length} days · ${state.totalTasks} tasks'),
             subtitle: const Text(
-              'Plan comes from plan/daily-plan.md. After the plan changes, run '
-              'tracker-app/tool/sync_plan.sh and re-install the app.',
+              'Plan, scores and check-ins come from the GitHub repo. Push changes and the app '
+              'picks them up on the next sync. No re-install needed.',
             ),
           ),
         ],

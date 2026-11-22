@@ -6,21 +6,27 @@ import 'package:roadmap_tracker/main.dart';
 import 'package:roadmap_tracker/models/plan.dart';
 import 'package:roadmap_tracker/models/progress_log.dart';
 import 'package:roadmap_tracker/screens/progress_screen.dart';
+import 'package:roadmap_tracker/services/repo_sync.dart';
 import 'package:roadmap_tracker/state/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Smoke tests: every screen renders at phone size without layout errors.
 void main() {
-  final plan = Plan.parse(File('assets/plan/daily-plan.md').readAsStringSync());
-  final log = ProgressLog.parse(File('assets/plan/progress-log.md').readAsStringSync());
+  final plan = Plan.parse(File('assets/repo/plan/daily-plan.md').readAsStringSync());
+  final log = ProgressLog.parse(File('assets/repo/plan/progress-log.md').readAsStringSync());
 
   Future<AppState> makeState({required bool onboarded}) async {
     SharedPreferences.setMockInitialValues({'onboarded': onboarded});
     final prefs = await SharedPreferences.getInstance();
+    final files = <String, String>{
+      for (final f in Directory('assets/repo').listSync(recursive: true).whereType<File>())
+        f.path.substring('assets/repo/'.length): f.readAsStringSync(),
+    };
     final state = AppState(
       plan: plan,
       log: log,
       prefs: prefs,
+      snapshot: RepoSnapshot(files: files),
       clock: () => DateTime(2026, 11, 22, 19),
     );
     if (onboarded) await state.markDoneBefore(plan.dayById['d2redo']!);
@@ -122,5 +128,42 @@ void main() {
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
     expect(find.text('Daily study reminder'), findsOneWidget);
+  });
+
+  testWidgets('reviews tab lists check-ins and opens them', (tester) async {
+    phone(tester);
+    final state = await makeState(onboarded: true);
+    await tester.pumpWidget(RoadmapApp(state: state));
+    await tester.pumpAndSettle();
+
+    // Latest review card on Today (below the task list).
+    await tester.scrollUntilVisible(
+      find.text('Latest review: Day 2 re-test'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Latest review: Day 2 re-test'), findsOneWidget);
+
+    await tester.tap(find.text('Reviews'));
+    await tester.pumpAndSettle();
+    expect(find.text('Day 2 re-test'), findsOneWidget);
+    expect(find.text('4.8'), findsWidgets);
+
+    // A check-in: wide question table becomes cards.
+    await tester.tap(find.text('Day 2'));
+    await tester.pumpAndSettle();
+    expect(find.text('Day 2 check-in'), findsOneWidget);
+    expect(find.textContaining('for...of vs for...in', findRichText: true), findsWidgets);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -4000));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // Revision notes with code blocks and tables.
+    await tester.tap(find.text('Revision notes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Interview habits', findRichText: true), findsOneWidget);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -6000));
+    await tester.pumpAndSettle();
   });
 }

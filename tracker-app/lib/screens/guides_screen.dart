@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/plan.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
+import '../widgets/markdown_view.dart';
 
 /// The "How to prepare" sections of the plan, readable on the phone.
 class GuidesScreen extends StatelessWidget {
@@ -48,10 +49,7 @@ class GuidesScreen extends StatelessWidget {
           if (state.plan.intro.isNotEmpty)
             SectionCard(
               title: 'How the plan works',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [for (final l in state.plan.intro) _Bullet(text: l, indent: 0)],
-              ),
+              child: MarkdownView(markdown: state.plan.intro.map((l) => '- $l').join('\n')),
             ),
         ],
       ),
@@ -69,133 +67,7 @@ class GuideDetailScreen extends StatelessWidget {
       appBar: AppBar(title: Text(guide.title)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: _blocks(context, guide.lines),
-      ),
-    );
-  }
-
-  List<Widget> _blocks(BuildContext context, List<String> lines) {
-    final scheme = Theme.of(context).colorScheme;
-    final out = <Widget>[];
-    final table = <List<String>>[];
-
-    void flushTable() {
-      if (table.isEmpty) return;
-      out.add(
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            border: Border.all(color: scheme.outlineVariant),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (var i = 0; i < table.length; i++)
-                Container(
-                  color: i == 0 ? scheme.surfaceContainerHighest : null,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final cell in table[i])
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: RichLine(
-                              cell,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: i == 0 ? FontWeight.w700 : null,
-                                color: scheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
-      table.clear();
-    }
-
-    for (final raw in lines) {
-      final line = raw.trimRight();
-      if (line.trim().startsWith('|')) {
-        if (RegExp(r'^\|[\s\-:|]+\|$').hasMatch(line.trim())) continue;
-        final parts = line.trim().split('|');
-        table.add(parts.sublist(1, parts.length - 1).map((c) => c.trim()).toList());
-        continue;
-      }
-      flushTable();
-      if (line.trim().isEmpty) {
-        out.add(const SizedBox(height: 6));
-        continue;
-      }
-      if (line.startsWith('### ')) {
-        out.add(
-          Padding(
-            padding: const EdgeInsets.only(top: 12, bottom: 4),
-            child: Text(
-              line.substring(4),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-        );
-        continue;
-      }
-      final indent = line.length - line.trimLeft().length;
-      final trimmed = line.trimLeft();
-      final numbered = RegExp(r'^(\d+)\.\s+(.*)$').firstMatch(trimmed);
-      if (numbered != null) {
-        out.add(_Bullet(text: numbered[2]!, marker: '${numbered[1]}.', indent: indent));
-      } else if (trimmed.startsWith('- ')) {
-        out.add(_Bullet(text: trimmed.substring(2), indent: indent));
-      } else {
-        out.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: RichLine(trimmed, style: const TextStyle(fontSize: 14.5, height: 1.4)),
-          ),
-        );
-      }
-    }
-    flushTable();
-    return out;
-  }
-}
-
-class _Bullet extends StatelessWidget {
-  const _Bullet({required this.text, required this.indent, this.marker});
-  final String text;
-  final int indent;
-  final String? marker;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.only(left: indent * 6.0, top: 3, bottom: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 24,
-            child: Text(
-              marker ?? '•',
-              style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
-            ),
-          ),
-          Expanded(
-            child: RichLine(
-              text,
-              style: TextStyle(fontSize: 14.5, height: 1.4, color: scheme.onSurface),
-            ),
-          ),
-        ],
+        children: [MarkdownView(markdown: guide.lines.join('\n'))],
       ),
     );
   }
